@@ -16,7 +16,28 @@ typedef std::deque<std::shared_ptr<XBuffer>> XBufferQueue;
 
 XBufferQueue queue;
 
-void callback(uint8_t* data, size_t size)
+static int read_packet_callback(void *opaque, uint8_t *buf_out, int buf_size)
+{
+        std::shared_ptr<XBuffer>& buffer = queue.front();
+        size_t min_size = std::min<size_t>((size_t)buf_size, buffer->size());
+
+        if (writed < buffer->size())
+        {
+            XBuffer* newBuffer = new XBuffer();
+            newBuffer->resize(buffer->size() - writed);
+            memcpy(&newBuffer->front(), &buffer->front() + writed, newBuffer->size());
+
+            queue.pop_front();
+            queue.push_front(std::shared_ptr<XBuffer>(newBuffer));
+        }
+        else
+        {
+            queue.pop_front();
+        }
+
+}
+
+void writer_data(uint8_t *data, size_t size)
 {
     XBuffer* buffer = new XBuffer();
     buffer->resize(size);
@@ -36,8 +57,8 @@ int main(int argc, char **argv) {
     do {
         XBuffer buffer = XBuffer();
         buffer.resize(4096);
-        len = (int) fread(&buffer.front(), 1, 4096, fp);
-        callback(&buffer.front(), buffer.size());
+        len = fread(&buffer.front(), 1, 4096, fp);
+        writer_data(&buffer.front(), (size_t) len);
         printf("file read len = %d \n", len);
     }while(len == 4096);
 
@@ -45,24 +66,11 @@ int main(int argc, char **argv) {
 
     size_t writer_max = 4099 * 2;//encode
     do {
-        std::shared_ptr<XBuffer>& buffer = queue.front();
-        size_t min_size = std::min<size_t>(writer_max, buffer->size());
-        size_t writed = fwrite(&buffer->front(), 1, min_size, fw);
-        if (writed < buffer->size())
-        {
-            XBuffer* newBuffer = new XBuffer();
-            newBuffer->resize(buffer->size() - writed);
-            memcpy(&newBuffer->front(), &buffer->front() + writed, newBuffer->size());
-
-            queue.pop_front();
-            queue.push_front(std::shared_ptr<XBuffer>(newBuffer));
-        }
-        else
-        {
-            queue.pop_front();
-        }
-
-    }while(queue.size());
+        XBuffer buffer = XBuffer();
+        buffer.resize(writer_max);
+        len = read_packet_callback(NULL, &buffer.front(), (int) writer_max);
+        len = fwrite(&buffer.front(), 1, len, fw);
+    }while(len == writer_max);
 
     fclose(fw);
 }
