@@ -39,6 +39,8 @@ struct buffer_data {
     size_t size; ///< size left in the buffer
 };
 
+FILE *file;
+
 static const char *get_error_text(const int error) {
     static char error_buffer[255];
     av_strerror(error, error_buffer, sizeof(error_buffer));
@@ -112,45 +114,48 @@ static int decode_audio_frame(AVFrame *frame,
     return 0;
 }
 
-static int read_packet(void *opaque, uint8_t *buf, int buf_size)
-{
-    struct buffer_data *bd = (struct buffer_data *)opaque;
-    buf_size = FFMIN(buf_size, bd->size);
+static int read_packet(void *opaque, uint8_t *buf, int buf_size) {
+//    struct buffer_data *bd = (struct buffer_data *)opaque;
+//    buf_size = FFMIN(buf_size, bd->size);
+//
+//    printf("ptr:%p size:%zu\n", bd->ptr, bd->size);
+//
+//    /* copy internal buffer data to buf */
+//    memcpy(buf, bd->ptr, buf_size);
+//    bd->ptr  += buf_size;
+//    bd->size -= buf_size;
 
-    printf("ptr:%p size:%zu\n", bd->ptr, bd->size);
+    int len = (int) fread(buf, 1, buf_size, file);
 
-    /* copy internal buffer data to buf */
-    memcpy(buf, bd->ptr, buf_size);
-    bd->ptr  += buf_size;
-    bd->size -= buf_size;
+    printf("read file size = % d\n", len);
 
-    return buf_size;
+    return len;
 }
 
-int main4(int argc, char *argv[])
-{
+int main3(int argc, char *argv[]) {
     AVFormatContext *fmt_ctx = NULL;
     AVIOContext *avio_ctx = NULL;
     uint8_t *buffer = NULL, *avio_ctx_buffer = NULL;
     size_t buffer_size, avio_ctx_buffer_size = 4096;
     char *input_filename = NULL;
     int ret = 0;
-    struct buffer_data bd = { 0 };
+    struct buffer_data bd = {0};
 
 
     input_filename = "/home/chenwb/reverseme.pcm";
+    file = fopen(input_filename, "rb");
 
     /* register codecs and formats and other lavf/lavc components*/
     av_register_all();
 
-    /* slurp file content into buffer */
-    ret = av_file_map(input_filename, &buffer, &buffer_size, 0, NULL);
-    if (ret < 0)
-        goto end;
+//    /* slurp file content into buffer */
+//    ret = av_file_map(input_filename, &buffer, &buffer_size, 0, NULL);
+//    if (ret < 0)
+//        goto end;
 
     /* fill opaque structure used by the AVIOContext read callback */
-    bd.ptr  = buffer;
-    bd.size = buffer_size;
+//    bd.ptr  = buffer;
+//    bd.size = buffer_size;
 
     if (!(fmt_ctx = avformat_alloc_context())) {
         ret = AVERROR(ENOMEM);
@@ -170,18 +175,29 @@ int main4(int argc, char *argv[])
     }
     fmt_ctx->pb = avio_ctx;
 
+    int len = 0;
+    for (int i = 0; i < 10; i ++ ) {
+        uint8_t buff[4096];
+        len = (int) fread(buff, 1, 4096, file);
+        avio_write(avio_ctx, buff, 4096);
+        if (len <  4096)
+            break;
+    }
+
+
     AVInputFormat *fmt = av_find_input_format("s16be");
     ret = avformat_open_input(&fmt_ctx, NULL, fmt, NULL);
     if (ret < 0) {
         fprintf(stderr, "Could not open input\n");
         goto end;
     }
+
     AVFrame *input_frame = NULL;
 
     if (init_input_frame(&input_frame))
         goto end;
 //    AVCodecContext *input_codec_context = fmt_ctx->streams[0]->codec;
-    decode_audio_frame(input_frame, fmt_ctx , NULL, NULL, NULL);
+    decode_audio_frame(input_frame, fmt_ctx, NULL, NULL, NULL);
 
 //    ret = avformat_find_stream_info(fmt_ctx, NULL);
 //    if (ret < 0) {
@@ -191,15 +207,15 @@ int main4(int argc, char *argv[])
 
     av_dump_format(fmt_ctx, 0, input_filename, 0);
 
-end:
+    end:
     avformat_close_input(&fmt_ctx);
     /* note: the internal buffer could have changed, and be != avio_ctx_buffer */
     if (avio_ctx) {
         av_freep(&avio_ctx->buffer);
         av_freep(&avio_ctx);
     }
-    av_file_unmap(buffer, buffer_size);
-
+//    av_file_unmap(buffer, buffer_size);
+    fclose(file);
     if (ret < 0) {
         fprintf(stderr, "Error occurred: %s\n", av_err2str(ret));
         return 1;

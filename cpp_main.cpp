@@ -2,75 +2,57 @@
 // Created by chen weibin on 16/9/14.
 //
 #include <iostream>
-#include <memory>
-#include <stdint.h>
-#include <string>
 #include <queue>
-#include <mutex>
-#include <vector>
-#include <deque>
-#include <cstring>
 
-typedef std::vector<uint8_t> XBuffer;
-typedef std::deque<std::shared_ptr<XBuffer>> XBufferQueue;
-
-XBufferQueue queue;
-
-static int read_packet_callback(void *opaque, uint8_t *buf_out, int buf_size)
-{
-        std::shared_ptr<XBuffer>& buffer = queue.front();
-        size_t min_size = std::min<size_t>((size_t)buf_size, buffer->size());
-
-        if (writed < buffer->size())
-        {
-            XBuffer* newBuffer = new XBuffer();
-            newBuffer->resize(buffer->size() - writed);
-            memcpy(&newBuffer->front(), &buffer->front() + writed, newBuffer->size());
-
-            queue.pop_front();
-            queue.push_front(std::shared_ptr<XBuffer>(newBuffer));
-        }
-        else
-        {
-            queue.pop_front();
-        }
-
-}
-
-void writer_data(uint8_t *data, size_t size)
-{
-    XBuffer* buffer = new XBuffer();
-    buffer->resize(size);
-
-    uint8_t* head = &buffer->front();
-    memcpy(head, data, size);
-
-    queue.push_back(std::shared_ptr<XBuffer>(buffer));
-}
-
+#include "buf_queue.h"
 
 int main(int argc, char **argv) {
     FILE *fp = fopen("/home/chenwb/reverseme.pcm", "rb");
     FILE *fw = fopen("/home/chenwb/reverseme2.pcm", "wb");
+
+    BuffQueue buffQueue;
 
     int len; //decode
     do {
         XBuffer buffer = XBuffer();
         buffer.resize(4096);
         len = fread(&buffer.front(), 1, 4096, fp);
-        writer_data(&buffer.front(), (size_t) len);
+        buffQueue.write_data(&buffer.front(), (size_t) len);
         printf("file read len = %d \n", len);
-    }while(len == 4096);
+    } while (len == 4096);
 
     fclose(fp);
+
+    std::
 
     size_t writer_max = 4099 * 2;//encode
     do {
         XBuffer buffer = XBuffer();
         buffer.resize(writer_max);
-        len = read_packet_callback(NULL, &buffer.front(), (int) writer_max);
+        len = buffQueue.read_packet_callback(&buffer.front(), (int) writer_max);
+        printf("read len = %d", len);
         len = fwrite(&buffer.front(), 1, len, fw);
-    }while(len == writer_max);
+    } while (len == writer_max);
+
+//    do {
+//        std::shared_ptr<XBuffer>& buffer = queue.front();
+//        size_t min_size = std::min<size_t>(writer_max, buffer->size());
+//        size_t writed = fwrite(&buffer->front(), 1, min_size, fw);
+//        if (writed < buffer->size())
+//        {
+//            XBuffer* newBuffer = new XBuffer();
+//            newBuffer->resize(buffer->size() - writed);
+//            memcpy(&newBuffer->front(), &buffer->front() + writed, newBuffer->size());
+//
+//            queue.pop_front();
+//            queue.push_front(std::shared_ptr<XBuffer>(newBuffer));
+//        }
+//        else
+//        {
+//            queue.pop_front();
+//        }
+//
+//    }while(queue.size());
 
     fclose(fw);
 }
